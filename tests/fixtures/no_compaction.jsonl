@@ -1,0 +1,2 @@
+{"type":"user","isSidechain":false,"message":{"role":"user","content":"hello"},"timestamp":"2026-01-01T00:00:00Z","cwd":"/home/test/proj2","sessionId":"test-no-compact","gitBranch":"dev"}
+{"type":"assistant","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"hi there"},{"type":"tool_use","name":"Bash","input":{"description":"check status","command":"git status"}}]},"timestamp":"2026-01-01T00:01:00Z"}
