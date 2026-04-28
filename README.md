@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ccx_logo.png" alt="ccx — Sidequests" width="640">
+</p>
+
 # ccx - Sidequests
 
 > Give your side agents the same context as your main coding agent session — without re-explaining anything.
