@@ -1,4 +1,4 @@
-"""ccx — extract context from Claude Code sessions for use in side agents."""
+"""ccx — extract context from agent sessions for use in side agents."""
 
 from __future__ import annotations
 
@@ -8,15 +8,8 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__
+from . import sources
 from .clipboard import copy_to_clipboard
-from .parser import parse_session
-from .projects import (
-    find_project_for_cwd,
-    latest_session_jsonl,
-    list_recent_sessions,
-    project_dir_for,
-    session_jsonl,
-)
 from .render import render_json, render_markdown
 
 
@@ -24,40 +17,7 @@ def _err(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-def _resolve_jsonl(args: argparse.Namespace) -> Optional[Path]:
-    if args.project_path:
-        project_dir = project_dir_for(args.project_path)
-        if project_dir is None:
-            _err(f"No Claude Code session directory for: {args.project_path}")
-            _err("(Looked under ~/.claude/projects/ for the matching key.)")
-            return None
-    else:
-        project_dir = find_project_for_cwd()
-        if project_dir is None:
-            _err("No Claude Code session for the current directory.")
-            _err("Try `ccx --list` to pick from all projects, or pass a path: `ccx <project>`.")
-            return None
-
-    if args.session:
-        p = session_jsonl(project_dir, args.session)
-        if p is None:
-            _err(f"Session {args.session!r} not found in {project_dir}")
-            return None
-        return p
-
-    p = latest_session_jsonl(project_dir)
-    if p is None:
-        _err(f"No .jsonl session files in {project_dir}")
-    return p
-
-
-def _emit(jsonl_path: Path, args: argparse.Namespace) -> int:
-    session = parse_session(
-        jsonl_path,
-        include_tool_calls=not args.no_tool_calls,
-        max_turns=args.max_turns,
-    )
-
+def _emit_session(session, args: argparse.Namespace) -> int:
     if args.format == "json":
         out = render_json(session)
     else:
@@ -79,22 +39,48 @@ def _emit(jsonl_path: Path, args: argparse.Namespace) -> int:
     return 0
 
 
+def _emit_for_source(source_name: str, ref, args: argparse.Namespace) -> int:
+    src = sources.get(source_name)
+    session = src.parse(
+        ref,
+        include_tool_calls=not args.no_tool_calls,
+        max_turns=args.max_turns,
+    )
+    return _emit_session(session, args)
+
+
+def _format_list_row(i: int, entry: dict) -> str:
+    prompt = entry.get("first_prompt", "") or ""
+    if len(prompt) > 70:
+        prompt = prompt[:67] + "..."
+    branch = f" [{entry['git_branch']}]" if entry.get("git_branch") else ""
+    src_tag = f"[{entry.get('source', '?')}]"
+    lines = [
+        f"  {i:2}. {src_tag} {entry.get('project_name', '?')}{branch}",
+    ]
+    if prompt:
+        lines.append(f"      {prompt}")
+    sid = entry.get("session_id", "")
+    msgs = entry.get("message_count", 0)
+    msg_part = f"  ·  {msgs} msgs" if msgs else ""
+    lines.append(f"      {sid}{msg_part}")
+    return "\n".join(lines)
+
+
 def cmd_list(args: argparse.Namespace) -> int:
-    sessions = list_recent_sessions(limit=args.limit)
-    if not sessions:
-        _err("No Claude Code sessions found in ~/.claude/projects/")
+    if args.source == "all":
+        entries = sources.list_all(limit=args.limit)
+    else:
+        src = sources.get(args.source)
+        entries = src.list_recent(limit=args.limit)
+
+    if not entries:
+        _err(f"No {args.source} sessions found.")
         return 1
 
     print()
-    for i, s in enumerate(sessions, 1):
-        prompt = s["first_prompt"]
-        if len(prompt) > 70:
-            prompt = prompt[:67] + "..."
-        branch = f" [{s['git_branch']}]" if s["git_branch"] else ""
-        print(f"  {i:2}. {s['project_name']}{branch}")
-        if prompt:
-            print(f"      {prompt}")
-        print(f"      {s['session_id']}  ·  {s['message_count']} msgs")
+    for i, e in enumerate(entries, 1):
+        print(_format_list_row(i, e))
         print()
 
     if not sys.stdin.isatty():
@@ -102,7 +88,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        choice = input(f"Pick a session [1-{len(sessions)}] (q to quit): ").strip()
+        choice = input(f"Pick a session [1-{len(entries)}] (q to quit): ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return 0
@@ -110,24 +96,28 @@ def cmd_list(args: argparse.Namespace) -> int:
         return 0
     try:
         idx = int(choice) - 1
-        if not 0 <= idx < len(sessions):
+        if not 0 <= idx < len(entries):
             raise ValueError
     except ValueError:
         _err(f"Invalid choice: {choice}")
         return 1
 
-    chosen = sessions[idx]
-    return _emit(Path(chosen["jsonl_path"]), args)
+    chosen = entries[idx]
+    session = sources.dispatch_parse(
+        chosen,
+        include_tool_calls=not args.no_tool_calls,
+        max_turns=args.max_turns,
+    )
+    return _emit_session(session, args)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     p = argparse.ArgumentParser(
         prog="ccx",
         description=(
-            "Extract context from Claude Code sessions for use in side agents "
-            "(Cursor, Codex, ChatGPT, second Claude Code session, ...). "
-            "Reads ~/.claude/projects/, finds the latest isCompactSummary, "
-            "and emits the slice of conversation that came after it."
+            "Extract context from agent sessions (Claude Code, Cursor, Codex) "
+            "for use in side agents. Reads sessions from disk and emits a "
+            "Markdown / JSON block tuned for handoff."
         ),
     )
     p.add_argument(
@@ -136,9 +126,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Path to the project (default: current working directory).",
     )
     p.add_argument(
+        "--source",
+        choices=["claude", "cursor", "codex", "all"],
+        default="claude",
+        help=(
+            "Which agent's sessions to read. `all` is only valid with --list. "
+            "Default: claude."
+        ),
+    )
+    p.add_argument(
         "--list",
         action="store_true",
-        help="Interactive picker over recent sessions across all projects.",
+        help="Interactive picker over recent sessions for the chosen source(s).",
     )
     p.add_argument(
         "--limit",
@@ -186,10 +185,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.list:
         return cmd_list(args)
 
-    jsonl_path = _resolve_jsonl(args)
-    if jsonl_path is None:
+    if args.source == "all":
+        _err("--source all is only valid with --list.")
+        return 2
+
+    src = sources.get(args.source)
+    ref, err = src.resolve(args.project_path, args.session)
+    if ref is None:
+        _err(err or f"No {args.source} session found.")
         return 1
-    return _emit(jsonl_path, args)
+    return _emit_for_source(args.source, ref, args)
 
 
 if __name__ == "__main__":

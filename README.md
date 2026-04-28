@@ -1,8 +1,8 @@
 # ccx - Sidequests
 
-> Give your side agents the same context as your main Claude Code session — without re-explaining anything.
+> Give your side agents the same context as your main coding agent session — without re-explaining anything.
 
-`ccx` is a tiny CLI that extracts the *current working context* from a Claude Code session and outputs it as a Markdown block you can paste into ChatGPT, Cursor, Codex, another Claude Code window — anywhere.
+`ccx` is a tiny CLI that extracts the *current working context* from a coding-agent session — Claude Code, Cursor, or Codex CLI — and outputs it as a Markdown block you can paste into ChatGPT, another agent, a fresh window — anywhere.
 
 No LLM calls. No data leaves your machine. Stdlib-only Python.
 
@@ -24,6 +24,18 @@ When a Claude Code conversation gets long, Claude Code auto-compacts it: it asks
 
 ---
 
+## vs. Claude Code's `/export`
+
+`/export` dumps the terminal scrollback — banner, rendered diffs, status lines and all — for a human to read. `ccx` reads the underlying session log and emits structured Markdown for *another agent* to read. On the same conversation, `ccx` is roughly half the size with no UI noise.
+
+Three things `/export` structurally can't do:
+
+- **Run in parallel.** It's a slash command, so it queues behind whatever the main runner is doing. `ccx` reads the session file from disk, from any terminal, while the main agent keeps working.
+- **Reach across sessions.** `--list` / `--session` work on any past session, not just the active one.
+- **Span tools.** `ccx` aims to read Claude Code, Cursor, and Codex sessions through one interface. `/export` is Claude-Code-only by definition.
+
+---
+
 ## Install
 
 ```bash
@@ -41,11 +53,16 @@ Requires Python 3.9+. No third-party dependencies.
 ## Usage
 
 ```bash
-# From inside a project directory — finds the latest session for the cwd
+# From inside a project directory — finds the latest Claude Code session for the cwd
 ccx
 
+# Same, but read from Cursor or Codex CLI instead
+ccx --source cursor
+ccx --source codex
+
 # Pick interactively across all projects (great when running from a side terminal)
-ccx --list
+ccx --list                    # claude only
+ccx --source all --list       # claude + cursor + codex, newest first
 
 # Copy to clipboard (paste into ChatGPT, Claude.ai, Cursor chat, ...)
 ccx --copy
@@ -55,13 +72,13 @@ ccx --output .ccx.md
 
 # Pipe straight into another tool
 ccx | pbcopy
-ccx | codex "based on this context, refactor the auth flow"
+ccx --source cursor | codex "based on this context, refactor the auth flow"
 
 # Specific project / specific session
 ccx ~/code/myapp
 ccx --session ab7f6a92-1f1a-4b02-b187-3c81c77317d8
 
-# Cap the number of turns after compaction
+# Cap the number of turns after the last compaction (Claude Code) or in total
 ccx --max-turns 20
 
 # Strip tool-call summary lines (just user/assistant text)
@@ -86,30 +103,35 @@ ccx --format json
 
 For each session, `ccx` outputs:
 
-1. **Header**: project name, session id, git branch, last compaction time and token counts
-2. **Conversation Summary**: the verbatim text of the most recent `isCompactSummary` (if the session has been compacted)
-3. **Continued Conversation**: every user and assistant turn after that compaction, with optional one-line summaries of tool calls (`↳ Read: foo.py`, `↳ Bash: npm test`, …)
+1. **Header**: project name, session id, git branch, and last compaction time when applicable
+2. **Conversation Summary** *(Claude Code & Codex CLI)*: if the session has been compacted, the model's curated summary — `isCompactSummary` text for Claude Code, or `replacement_history` (rendered as role-labeled blocks) for Codex
+3. **Conversation**: every user and assistant turn after the last compaction (or the full chat if there was none), with optional one-line summaries of tool calls (`↳ Read: foo.py`, `↳ Bash: npm test`, …)
 
 What's filtered out:
 
-- Queue operations, file-history snapshots, todo reminders, hook injections
-- IDE-injected events (`<ide_opened_file>`, `<ide_selection>`)
-- Progress events, raw tool results, sidechain (subagent) traces
-- Assistant `thinking` blocks
-
-If a session has never been compacted, the whole conversation is emitted (filtered the same way).
+- Claude Code: queue operations, file-history snapshots, todo reminders, hook injections, IDE events (`<ide_opened_file>`, `<ide_selection>`), raw tool results, sidechain (subagent) traces, `thinking` blocks
+- Codex CLI: `developer` system messages, permission/environment preambles, `reasoning` events, `function_call_output` blobs
+- Cursor: empty bubbles, rich-text duplicates of plain text
 
 ---
 
 ## Privacy
 
-Everything runs locally. `ccx` reads `~/.claude/projects/<project-key>/<session-id>.jsonl` and writes to stdout / clipboard / file you specify. **No network requests, ever.**
+Everything runs locally. `ccx` reads:
+
+- Claude Code: `~/.claude/projects/<project-key>/<session-id>.jsonl`
+- Codex CLI: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
+- Cursor: `~/Library/Application Support/Cursor/User/{workspaceStorage,globalStorage}/state.vscdb` (read-only)
+
+Writes only to stdout / clipboard / file you specify. **No network requests, ever.**
 
 ---
 
 ## How it works (technical)
 
-Claude Code stores each session as a JSONL file at `~/.claude/projects/<project-key>/<session-id>.jsonl`, where `<project-key>` is the absolute project path with `/` replaced by `-`.
+Each supported tool persists its session somewhere on disk; `ccx` reads it and renders a uniform Markdown / JSON shape.
+
+**Claude Code** stores each session as a JSONL file at `~/.claude/projects/<project-key>/<session-id>.jsonl`, where `<project-key>` is the absolute project path with `/` replaced by `-`.
 
 A session is a stream of events: `user`, `assistant`, `system`, `attachment`, `queue-operation`, etc. When auto-compaction fires, Claude Code writes:
 
@@ -118,12 +140,14 @@ A session is a stream of events: `user`, `assistant`, `system`, `attachment`, `q
 
 A session can be compacted multiple times. `ccx` finds the **last** `isCompactSummary` and emits it followed by all subsequent meaningful turns.
 
+**Codex CLI** writes each session as a JSONL "rollout" at `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<id>.jsonl`. Each line is `{timestamp, type, payload}`; the first line carries `cwd` and `id`. Conversation events arrive as `response_item` payloads (messages with `role` + `input_text`/`output_text` parts, plus `function_call` / `function_call_output` for tool use). When Codex compacts (auto or via `/compact`), it writes a top-level `type: "compacted"` event whose `payload.replacement_history` is a curated list of messages that replaces all prior history; `ccx` finds the **last** such event and emits its `replacement_history` as the summary, followed by everything after.
+
+**Cursor** splits chat data across two SQLite stores. Per-workspace `~/Library/Application Support/Cursor/User/workspaceStorage/<hash>/state.vscdb` maps the workspace hash to a project folder and lists composer (chat) IDs. The global `globalStorage/state.vscdb` holds the actual messages keyed `bubbleId:<composerId>:<bubbleId>`, with `type: 1=user|2=assistant`, `text`, `createdAt`, and `toolFormerData` for tool calls.
+
 ---
 
 ## Roadmap
 
-- [ ] Cursor session extraction (different format, same idea)
-- [ ] Codex CLI session extraction
 - [ ] Optional MCP server wrapper (so any MCP-aware agent can call `ccx` natively)
 - [ ] Optional Claude Code skill (`/ccx` to inject into the current session)
 - [ ] PyPI release as `ccx-cli`

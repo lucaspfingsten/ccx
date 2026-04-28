@@ -1,0 +1,12 @@
+{"timestamp":"2026-04-29T10:00:00Z","type":"session_meta","payload":{"id":"019dface-1234-7000-8888-bbbbbbbbbbbb","timestamp":"2026-04-29T10:00:00Z","cwd":"/tmp/fake-project","originator":"codex_cli","git":{"branch":"main"}}}
+{"timestamp":"2026-04-29T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"first user message before any compaction"}]}}
+{"timestamp":"2026-04-29T10:00:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"first assistant reply"}]}}
+{"timestamp":"2026-04-29T10:01:00Z","type":"compacted","payload":{"message":"","replacement_history":[{"type":"message","role":"user","content":[{"type":"input_text","text":"original goal: do X"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"plan-so-far: A, B, C"}]},{"type":"message","role":"developer","content":[{"type":"input_text","text":"system permissions noise"}]}]}}
+{"timestamp":"2026-04-29T10:01:01Z","type":"event_msg","payload":{"type":"context_compacted"}}
+{"timestamp":"2026-04-29T10:01:02Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"intermediate message between compactions"}]}}
+{"timestamp":"2026-04-29T10:01:03Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"intermediate reply"}]}}
+{"timestamp":"2026-04-29T10:02:00Z","type":"compacted","payload":{"message":"","replacement_history":[{"type":"compaction","encrypted_content":"opaque-blob"},{"type":"message","role":"user","content":[{"type":"input_text","text":"latest goal: do Y"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"updated plan: A', B', C'"}]}]}}
+{"timestamp":"2026-04-29T10:02:01Z","type":"event_msg","payload":{"type":"context_compacted"}}
+{"timestamp":"2026-04-29T10:02:02Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"post-compaction question"}]}}
+{"timestamp":"2026-04-29T10:02:03Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"ls\"}"}}
+{"timestamp":"2026-04-29T10:02:04Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer after the last compaction"}]}}

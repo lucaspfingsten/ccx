@@ -1,0 +1,12 @@
+{"timestamp":"2026-04-29T10:00:00Z","type":"session_meta","payload":{"id":"019ddead-beef-7000-8888-aaaaaaaaaaaa","timestamp":"2026-04-29T10:00:00Z","cwd":"/tmp/fake-project","originator":"codex_cli","git":{"branch":"feat/test"}}}
+{"timestamp":"2026-04-29T10:00:01Z","type":"event_msg","payload":{"type":"turn_started"}}
+{"timestamp":"2026-04-29T10:00:02Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions instructions>noise</permissions instructions>"}]}}
+{"timestamp":"2026-04-29T10:00:03Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<permissions instructions>preamble</permissions instructions>"}]}}
+{"timestamp":"2026-04-29T10:00:04Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"please help me debug this"}]}}
+{"timestamp":"2026-04-29T10:00:05Z","type":"response_item","payload":{"type":"reasoning","summary":"thinking..."}}
+{"timestamp":"2026-04-29T10:00:06Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Let me look at the code."}]}}
+{"timestamp":"2026-04-29T10:00:07Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"ls -la\"}"}}
+{"timestamp":"2026-04-29T10:00:08Z","type":"response_item","payload":{"type":"function_call_output","call_id":"x","output":"big tool output"}}
+{"timestamp":"2026-04-29T10:00:09Z","type":"response_item","payload":{"type":"function_call","name":"view","arguments":"{\"path\":\"/tmp/fake-project/main.py\"}"}}
+{"timestamp":"2026-04-29T10:00:10Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Found the bug."}]}}
+{"timestamp":"2026-04-29T10:00:11Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"thanks"}]}}
