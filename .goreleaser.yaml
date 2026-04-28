@@ -1,0 +1,72 @@
+version: 2
+
+project_name: ccx
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ccx
+    main: ./
+    binary: ccx
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/lucaspfingsten/ccx/internal/cli.Version={{ .Version }}
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "merge"
+
+# TODO: enable Homebrew tap publishing once the tap repo exists.
+#
+# Steps to enable:
+#   1. Create a new public repo at https://github.com/lucaspfingsten/homebrew-ccx
+#   2. Mint a fine-scoped personal access token with `repo` scope on that tap repo
+#      and add it to this repo's secrets as HOMEBREW_TAP_GITHUB_TOKEN
+#   3. Surface the secret in .github/workflows/release.yml (see the TODO there)
+#   4. Uncomment the `brews:` block below
+#
+# brews:
+#   - name: ccx
+#     repository:
+#       owner: lucaspfingsten
+#       name: homebrew-ccx
+#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+#     homepage: "https://github.com/lucaspfingsten/ccx"
+#     description: "Extract context from Claude Code sessions for use in side agents."
+#     license: "MIT"
+#     test: |
+#       system "#{bin}/ccx", "--version"
+#     install: |
+#       bin.install "ccx"
