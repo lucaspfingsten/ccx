@@ -1,0 +1,6 @@
+{"type":"user","uuid":"u-001","isSidechain":false,"message":{"role":"user","content":"hello"},"timestamp":"2026-04-28T10:00:00Z","cwd":"/home/test/uuid-proj","sessionId":"uuid-session","gitBranch":"main"}
+{"type":"assistant","uuid":"u-002","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"hi back"}]},"timestamp":"2026-04-28T10:01:00Z"}
+{"type":"user","uuid":"u-003","isSidechain":false,"message":{"role":"user","content":"second user msg"},"timestamp":"2026-04-28T10:02:00Z"}
+{"type":"assistant","uuid":"u-004","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"second reply"}]},"timestamp":"2026-04-28T10:03:00Z"}
+{"type":"user","uuid":"u-005","isSidechain":false,"message":{"role":"user","content":"third user msg"},"timestamp":"2026-04-28T10:04:00Z"}
+{"type":"assistant","uuid":"u-006","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"third reply"},{"type":"tool_use","name":"Read","input":{"file_path":"/x.go"}}]},"timestamp":"2026-04-28T10:05:00Z"}

@@ -1,0 +1,12 @@
+# Pin test fixture and golden file line endings to LF on all platforms.
+# Without this, Git on Windows converts LF to CRLF on checkout (autocrlf=true),
+# which makes byte-level golden comparisons fail in CI even though content matches.
+internal/render/testdata/*.md text eol=lf
+internal/parser/testdata/*.jsonl text eol=lf
+
+# Sensible defaults for the rest of the repo.
+* text=auto eol=lf
+*.go text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
