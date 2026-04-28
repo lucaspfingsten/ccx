@@ -1,4 +1,4 @@
-# ccx
+# ccx - Sidequests
 
 > Give your side agents the same context as your main Claude Code session — without re-explaining anything.
 
