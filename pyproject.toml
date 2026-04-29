@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ccx-cli"
-version = "0.1.0"
-description = "Extract context from Claude Code sessions for use in side agents (Cursor, Codex, ChatGPT, ...)."
+version = "0.2.0"
+description = "Extract context from coding-agent sessions (Claude Code, Cursor, Codex CLI) for use in side agents."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
