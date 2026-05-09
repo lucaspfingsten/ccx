@@ -281,6 +281,7 @@ def list_recent(limit: int = 15) -> list[dict]:
         for c in _composers_in_workspace(ws):
             cid = c.get("composerId") or ""
             updated = c.get("lastUpdatedAt") or 0
+            name = (c.get("name") or "").strip()
             out.append({
                 "source": "cursor",
                 "project_name": Path(folder).name if folder else ws.name,
@@ -291,9 +292,11 @@ def list_recent(limit: int = 15) -> list[dict]:
                     "workspace_dir": str(ws),
                     "project_path": folder,
                 },
-                "first_prompt": (c.get("name") or "").strip(),
+                "first_prompt": name,
+                "title": name,
                 "message_count": 0,
                 "git_branch": "",
+                "size_bytes": 0,
                 "mtime": int(updated),
             })
     out.sort(key=lambda x: x["mtime"], reverse=True)

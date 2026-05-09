@@ -11,6 +11,23 @@ CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 
 _NON_ALNUM = re.compile(r"[^a-zA-Z0-9]")
 
+_PROMPT_NOISE_PREFIXES = (
+    "<ide_opened_file>",
+    "<ide_selection>",
+    "<local-command-",
+    "<command-",
+)
+
+
+def _clean_prompt(text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    for pre in _PROMPT_NOISE_PREFIXES:
+        if text.startswith(pre):
+            return ""
+    return text
+
 
 def project_key_from_path(path: str | Path) -> str:
     """Convert an absolute project path into Claude Code's directory key.
@@ -56,16 +73,21 @@ def session_jsonl(project_dir: str | Path, session_id: str) -> Optional[Path]:
 
 
 def _peek_jsonl_metadata(jsonl_path: Path) -> dict:
-    """Scan the first ~30 lines of a JSONL for cwd / sessionId / gitBranch / first user prompt."""
+    """Scan a JSONL for cwd / sessionId / gitBranch / first user prompt / aiTitle.
+
+    `ai-title` records are appended throughout a session as Claude Code refines
+    the title; the *last* one wins. We bail early once we have everything else
+    and have seen at least one title, but keep reading otherwise so the title
+    we surface is as fresh as possible.
+    """
     cwd = ""
     git_branch = ""
     session_id = jsonl_path.stem
     first_prompt = ""
+    ai_title = ""
     try:
         with open(jsonl_path, "r", encoding="utf-8") as f:
             for i, line in enumerate(f):
-                if i > 30 and (cwd and first_prompt):
-                    break
                 line = line.strip()
                 if not line:
                     continue
@@ -77,24 +99,27 @@ def _peek_jsonl_metadata(jsonl_path: Path) -> dict:
                     cwd = obj.get("cwd") or ""
                     git_branch = obj.get("gitBranch") or git_branch
                     session_id = obj.get("sessionId") or session_id
+                if obj.get("type") == "ai-title":
+                    t = (obj.get("aiTitle") or "").strip()
+                    if t:
+                        ai_title = t
                 if not first_prompt and obj.get("type") == "user" and not obj.get("isSidechain"):
                     msg = obj.get("message") or {}
                     content = msg.get("content")
                     text = ""
                     if isinstance(content, str):
-                        text = content
+                        text = _clean_prompt(content)
                     elif isinstance(content, list):
                         for part in content:
                             if isinstance(part, dict) and part.get("type") == "text":
-                                t = part.get("text") or ""
-                                if t and not (
-                                    t.startswith("<ide_opened_file>")
-                                    or t.startswith("<ide_selection>")
-                                ):
-                                    text = t
+                                cleaned = _clean_prompt(part.get("text") or "")
+                                if cleaned:
+                                    text = cleaned
                                     break
-                    if text.strip():
-                        first_prompt = text.strip()
+                    if text:
+                        first_prompt = text
+                if i > 30 and cwd and first_prompt and ai_title:
+                    break
     except OSError:
         pass
     return {
@@ -102,7 +127,34 @@ def _peek_jsonl_metadata(jsonl_path: Path) -> dict:
         "git_branch": git_branch,
         "session_id": session_id,
         "first_prompt": first_prompt,
+        "ai_title": ai_title,
     }
+
+
+def _extract_latest_ai_title(jsonl_path: Path) -> str:
+    """Cheap pass that finds the most recent ai-title in a JSONL.
+
+    Uses a substring filter so the json.loads cost is paid only on the few
+    lines that actually carry a title.
+    """
+    title = ""
+    needle = b'"ai-title"'
+    try:
+        with open(jsonl_path, "rb") as f:
+            for raw in f:
+                if needle not in raw:
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except Exception:
+                    continue
+                if obj.get("type") == "ai-title":
+                    t = (obj.get("aiTitle") or "").strip()
+                    if t:
+                        title = t
+    except OSError:
+        pass
+    return title
 
 
 def list_recent_sessions(limit: int = 15) -> list[dict]:
@@ -134,16 +186,22 @@ def list_recent_sessions(limit: int = 15) -> list[dict]:
                     indexed_paths.add(str(full_p))
                     project_path = e.get("projectPath") or ""
                     project_name = Path(project_path).name if project_path else project_dir.name
+                    try:
+                        size_bytes = full_p.stat().st_size
+                    except OSError:
+                        size_bytes = 0
                     out.append(
                         {
                             "project_name": project_name,
                             "project_path": project_path,
                             "session_id": e.get("sessionId") or full_p.stem,
                             "jsonl_path": str(full_p),
-                            "first_prompt": (e.get("firstPrompt") or "").strip(),
+                            "first_prompt": _clean_prompt(e.get("firstPrompt") or ""),
+                            "title": "",  # filled lazily after sort+limit
                             "message_count": e.get("messageCount", 0),
                             "modified": e.get("modified") or "",
                             "git_branch": e.get("gitBranch") or "",
+                            "size_bytes": size_bytes,
                             "mtime": int(
                                 e.get("fileMtime") or full_p.stat().st_mtime * 1000
                             ),
@@ -162,6 +220,10 @@ def list_recent_sessions(limit: int = 15) -> list[dict]:
             project_name = (
                 Path(project_path).name if project_path else project_dir.name
             )
+            try:
+                stat = j.stat()
+            except OSError:
+                continue
             out.append(
                 {
                     "project_name": project_name,
@@ -169,12 +231,20 @@ def list_recent_sessions(limit: int = 15) -> list[dict]:
                     "session_id": meta["session_id"],
                     "jsonl_path": str(j),
                     "first_prompt": meta["first_prompt"],
+                    "title": meta["ai_title"],
                     "message_count": 0,
                     "modified": "",
                     "git_branch": meta["git_branch"],
-                    "mtime": int(j.stat().st_mtime * 1000),
+                    "size_bytes": stat.st_size,
+                    "mtime": int(stat.st_mtime * 1000),
                 }
             )
 
     out.sort(key=lambda x: x["mtime"], reverse=True)
-    return out[:limit]
+    out = out[:limit]
+    for entry in out:
+        if not entry.get("title"):
+            jp = entry.get("jsonl_path")
+            if jp:
+                entry["title"] = _extract_latest_ai_title(Path(jp))
+    return out

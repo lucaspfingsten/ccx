@@ -315,6 +315,10 @@ def resolve(project_path: Optional[str], session_id: Optional[str]
 def list_recent(limit: int = 15) -> list[dict]:
     out: list[dict] = []
     for p in _iter_rollouts():
+        try:
+            stat = p.stat()
+        except OSError:
+            continue
         meta = _read_session_meta(p)
         cwd = meta.get("cwd") or ""
         sid = meta.get("id") or p.stem
@@ -326,9 +330,11 @@ def list_recent(limit: int = 15) -> list[dict]:
             "session_id": sid,
             "ref": str(p),
             "first_prompt": first,
+            "title": "",
             "message_count": 0,
             "git_branch": (meta.get("git") or {}).get("branch") if isinstance(meta.get("git"), dict) else "",
-            "mtime": int(p.stat().st_mtime * 1000),
+            "size_bytes": stat.st_size,
+            "mtime": int(stat.st_mtime * 1000),
         })
     out.sort(key=lambda x: x["mtime"], reverse=True)
     return out[:limit]
