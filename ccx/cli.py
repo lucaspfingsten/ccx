@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,45 @@ from .render import render_json, render_markdown
 
 def _err(msg: str) -> None:
     print(msg, file=sys.stderr)
+
+
+def _human_size(n: int) -> str:
+    if not n:
+        return ""
+    if n < 1024:
+        return f"{n}B"
+    kb = n / 1024
+    if kb < 1024:
+        return f"{kb:.1f}KB"
+    mb = kb / 1024
+    return f"{mb:.1f}MB"
+
+
+def _relative_time(mtime_ms: int, now_ms: Optional[int] = None) -> str:
+    if not mtime_ms:
+        return ""
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    delta = max(0, (now_ms - mtime_ms) // 1000)
+    if delta < 60:
+        return f"{delta} second{'s' if delta != 1 else ''} ago"
+    if delta < 3600:
+        m = delta // 60
+        return f"{m} minute{'s' if m != 1 else ''} ago"
+    if delta < 86400:
+        h = delta // 3600
+        return f"{h} hour{'s' if h != 1 else ''} ago"
+    days = delta // 86400
+    if days < 7:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    if days < 30:
+        w = days // 7
+        return f"{w} week{'s' if w != 1 else ''} ago"
+    if days < 365:
+        mo = days // 30
+        return f"{mo} month{'s' if mo != 1 else ''} ago"
+    y = days // 365
+    return f"{y} year{'s' if y != 1 else ''} ago"
 
 
 def _emit_session(session, args: argparse.Namespace) -> int:
@@ -49,22 +89,30 @@ def _emit_for_source(source_name: str, ref, args: argparse.Namespace) -> int:
     return _emit_session(session, args)
 
 
-def _format_list_row(i: int, entry: dict) -> str:
-    prompt = entry.get("first_prompt", "") or ""
-    if len(prompt) > 70:
-        prompt = prompt[:67] + "..."
-    branch = f" [{entry['git_branch']}]" if entry.get("git_branch") else ""
-    src_tag = f"[{entry.get('source', '?')}]"
-    lines = [
-        f"  {i:2}. {src_tag} {entry.get('project_name', '?')}{branch}",
-    ]
-    if prompt:
-        lines.append(f"      {prompt}")
-    sid = entry.get("session_id", "")
-    msgs = entry.get("message_count", 0)
-    msg_part = f"  ·  {msgs} msgs" if msgs else ""
-    lines.append(f"      {sid}{msg_part}")
-    return "\n".join(lines)
+def _format_list_row(i: int, entry: dict, now_ms: Optional[int] = None) -> str:
+    title = (entry.get("title") or "").strip()
+    if not title:
+        title = (entry.get("first_prompt") or "").strip()
+    if not title:
+        title = entry.get("session_id", "") or "(untitled)"
+    if len(title) > 90:
+        title = title[:87] + "..."
+
+    parts: list[str] = []
+    rel = _relative_time(entry.get("mtime", 0), now_ms)
+    if rel:
+        parts.append(rel)
+    if entry.get("git_branch"):
+        parts.append(entry["git_branch"])
+    size = _human_size(entry.get("size_bytes", 0) or 0)
+    if size:
+        parts.append(size)
+    if entry.get("project_name"):
+        parts.append(f"{entry['project_name']} [{entry.get('source', '?')}]")
+    else:
+        parts.append(f"[{entry.get('source', '?')}]")
+
+    return f"  {i:2}. {title}\n      {'  ·  '.join(parts)}"
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -78,9 +126,10 @@ def cmd_list(args: argparse.Namespace) -> int:
         _err(f"No {args.source} sessions found.")
         return 1
 
+    now_ms = int(time.time() * 1000)
     print()
     for i, e in enumerate(entries, 1):
-        print(_format_list_row(i, e))
+        print(_format_list_row(i, e, now_ms=now_ms))
         print()
 
     if not sys.stdin.isatty():
